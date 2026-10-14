@@ -72,8 +72,12 @@ Rules for the commentary:
 1. Confirm that these are in the local `output` folder, and log their names and sizes:
    - `DDMMYYYYHHMMSS-forex-exposure-note.pdf` (the CFO note)
    - `DDMMYYYYHHMMSS-forex-exposure-workbook.xlsx` (the supporting calculations)
-2. Using the Google-Drive connector, upload both files, unchanged and under the same DDMMYYYYHHMMSS-prefixed names, into the Drive output folder (id above). Upload as binary content and disable any conversion to a Google-native type (the PDF must stay a PDF and the xlsx must stay an xlsx on Drive, never converted to a Doc or a Sheet).
-3. Log the Drive file id returned for each upload. If an upload fails, log an ERROR and say so plainly when you report back; do not claim the run succeeded.
+2. For each file, upload it to the Drive output folder (id above) using the Google-Drive connector's create-file tool, as binary content with any conversion to a Google-native type disabled (the PDF must stay a PDF and the xlsx must stay an xlsx on Drive, never converted to a Doc or a Sheet), under the same DDMMYYYYHHMMSS-prefixed name.
+3. The base64 content you pass to the upload call is generated text and a single wrong character would corrupt the file, so treat every upload as unverified until you check it, not as done:
+   - Immediately after each upload, download that same Drive file id back with the connector and compare it, byte for byte, against the local file (for example, run `base64 -w0` on the local file and on a dump of the downloaded content, with both the local output and the downloaded output read from tool results, and diff the two, never retyped from memory).
+   - If the comparison matches, the upload is verified, log the Drive file id and move on.
+   - If it does not match, retry the upload (and re-verify) up to 3 times. Only after 3 verified-mismatched attempts do you log an ERROR for that file and say plainly in your final report that the Drive copy could not be verified. Do not leave an unverified or known-corrupt copy on Drive without saying so.
+   - This verify-then-retry loop is the expected, required way to use the connector for binary files here. Do not skip the upload just because it has to be typed out; the verification step is what makes it safe.
 The `output/work` folder holds intermediate files, stays local only, and is never uploaded to Drive.
 
 ## Step 8: Email the CFO (mandatory, must be sent)
