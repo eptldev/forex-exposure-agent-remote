@@ -2,7 +2,6 @@ __pycache__/
 *.pyc
 worklog/*.md
 worklog/.current
-output/*.pdf
-output/*.xlsx
+output/*.html
 output/work/*
 !output/work/.keep
