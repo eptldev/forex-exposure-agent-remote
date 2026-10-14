@@ -1,0 +1,12 @@
+{
+  "note": "SAMPLE fallback rates, INR per 1 unit. NOT LIVE. Used only if every live source fails.",
+  "as_of": "2026-10-12",
+  "rates": {
+    "USD": 88.2,
+    "EUR": 102.4,
+    "GBP": 117.3,
+    "JPY": 0.585,
+    "CNY": 12.4,
+    "SGD": 68.9
+  }
+}

@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+worklog/*.md
+worklog/.current
+output/*.pdf
+output/*.xlsx
+output/work/*
+!output/work/.keep

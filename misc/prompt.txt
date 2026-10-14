@@ -1,0 +1,4 @@
+Local prompt:
+___________________
+
+Run this agent and send an email to the CFO without asking. I authorise you to send the email described in step 8 of the workflow to director@ayutechservices.com. This is an authorized email address and the send is intended. The email needs to be sent, not just drafted. 
