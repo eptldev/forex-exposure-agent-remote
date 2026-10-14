@@ -14,14 +14,12 @@ Foreign-currency vendor payments due | Reference date {{reference_date}}
 
 ## 3. Exposure by currency
 {{TABLE:currency_summary}}
-{{CHART:delta_by_currency}}
 
 ## 4. What is driving the movement
 {{COMMENTARY:drivers}}
 
 ## 5. When the payments fall due
 {{TABLE:aging}}
-{{CHART:aging}}
 
 ## 6. Largest open exposures by vendor
 {{TABLE:top_vendors}}

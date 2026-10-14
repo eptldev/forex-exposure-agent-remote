@@ -1,8 +1,10 @@
 """Compute forex exposure from the input sheet and rates.json.
 
-Writes output/work/exposure.json (metrics and tables) and the Excel workbook in output/.
+Writes output/work/exposure.json (metrics and tables) and the HTML workbook in output/.
 Convention: payables, so a RISE in INR cost vs booked is an additional cost (positive), a fall is a saving.
 Hedged = 'Y' items are assumed fully covered at the booked rate, so they carry no open exposure.
+The workbook is plain HTML (tables only, no embedded images) rather than .xlsx, so it is exact
+text that can be uploaded to Google Drive without the binary-transcription risk of base64.
 """
 import argparse, glob, json
 import pandas as pd
@@ -105,19 +107,33 @@ def main():
     }
     chart = {"delta_by_currency": {c: float(v) / 1e7 for c, v in cur["Delta"].items()}, "aging": {b: [float(r.Open) / 1e7, float(r.Live - r.Open) / 1e7] for b, r in ag.iterrows()}}
     json.dump({"metrics": M, "tables": T, "charts": chart}, open(WORK / "exposure.json", "w"), indent=2)
-    # workbook
+    # workbook (plain HTML: one section per sheet, tables only, no embedded images)
     stamp = common.now().strftime("%d%m%Y%H%M%S")
-    out = ROOT / "output" / f"{stamp}-forex-exposure-workbook.xlsx"
-    with pd.ExcelWriter(out, engine="openpyxl") as w:
-        pd.DataFrame(list(M.items()), columns=["Metric", "Value"]).to_excel(w, sheet_name="summary", index=False)
-        for k in ("currency_summary", "aging", "top_vendors", "sensitivity", "rates", "data_issues"):
-            pd.DataFrame(T[k]["rows"], columns=T[k]["head"]).to_excel(w, sheet_name=k.replace("_", "-"), index=False)
-        cols = ["Payment ID", "Vendor", "Currency", "Amount (FC)", "Booked Rate (INR per 1 FC)", "Live Rate", "Booked INR", "Live INR", "Additional cost INR", "Due Date", "Days to due", "Bucket", "Hedged", "Late Interest % pa", "Accrued late interest INR"]
-        d[cols].to_excel(w, sheet_name="line-detail", index=False)
-        for ws in w.book.worksheets:
-            for col in ws.columns: ws.column_dimensions[col[0].column_letter].width = min(48, max(12, max(len(str(c.value or "")) for c in col) + 2))
-            ws.freeze_panes = "A2"
-    log(f"Workbook written: {out.name}")
+    out = ROOT / "output" / f"{stamp}-forex-exposure-workbook.html"
+    style = (
+        "body{font-family:Helvetica,Arial,sans-serif;color:#1F2A1E;max-width:1100px;margin:24px auto;padding:0 16px}"
+        "h1{font-size:18px}h2{font-size:13px;color:#4F6F48;border-bottom:1px solid #D5DDD2;padding-bottom:3px;margin-top:22px}"
+        "table{border-collapse:collapse;width:100%;margin:6px 0;font-size:10.5px}"
+        "th{background:#4F6F48;color:#fff;text-align:left;padding:4px 6px;white-space:nowrap}"
+        "td{padding:4px 6px;border-bottom:1px solid #D5DDD2;white-space:nowrap}"
+        "tr:nth-child(even) td{background:#EEF3EC}"
+    )
+    def esc(x): return str(x).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    def df_html(frame): return frame.to_html(index=False, border=0, escape=True, na_rep="")
+    sections = [("summary", pd.DataFrame(list(M.items()), columns=["Metric", "Value"]))]
+    for k in ("currency_summary", "aging", "top_vendors", "sensitivity", "rates", "data_issues"):
+        sections.append((k.replace("_", " "), pd.DataFrame(T[k]["rows"], columns=T[k]["head"])))
+    cols = ["Payment ID", "Vendor", "Currency", "Amount (FC)", "Booked Rate (INR per 1 FC)", "Live Rate", "Booked INR", "Live INR", "Additional cost INR", "Due Date", "Days to due", "Bucket", "Hedged", "Late Interest % pa", "Accrued late interest INR"]
+    sections.append(("line detail", d[cols]))
+    body = "".join(f"<h2>{esc(name)}</h2>{df_html(frame)}" for name, frame in sections)
+    html = (
+        "<!doctype html><html lang='en'><head><meta charset='utf-8'>"
+        "<title>Forex Exposure Workbook</title>"
+        f"<style>{style}</style></head><body>"
+        f"<h1>Forex Exposure Workbook — {M['reference_date']}</h1>{body}</body></html>"
+    )
+    out.write_text(html, encoding="utf-8")
+    log(f"Workbook written: {out.name} ({out.stat().st_size} bytes)")
     log(f"Net {word} vs booked: {M['net_delta']} ({M['net_delta_pct']}); unhedged live value {M['unhedged_live']}; overdue {M['overdue_count']} items")
     print(json.dumps(M, indent=1))
 

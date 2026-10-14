@@ -1,35 +1,38 @@
-"""Render template/template.md into a fixed-format A4 PDF.
+"""Render template/template.md into a fixed-format, self-contained HTML note.
 
 Usage: python3 scripts/render_report.py [--commentary output/work/commentary.md]
 Inputs: template/template.md, output/work/exposure.json, output/work/commentary.md
-Output: output/DDMMYYYYHHMMSS-forex-exposure-note.pdf
+Output: output/DDMMYYYYHHMMSS-forex-exposure-note.html
+
 Template syntax: '# ' title, line after it is the subtitle, '## ' section heading, '- ' bullet,
-{{key}} metric, {{TABLE:name}}, {{CHART:name}}, {{COMMENTARY:name}} (headline, drivers, actions).
+{{key}} metric, {{TABLE:name}}, {{COMMENTARY:name}} (headline, drivers, actions).
+Plain HTML text only, by design: no embedded images or binary data, so the file can be
+uploaded to Google Drive as exact text with no transcription risk.
 """
-import argparse, json, re, sys
-import matplotlib; matplotlib.use("Agg")
-import matplotlib.pyplot as plt
-from reportlab.lib import colors
-from reportlab.lib.pagesizes import A4
-from reportlab.lib.styles import ParagraphStyle
-from reportlab.lib.units import mm
-from reportlab.platypus import BaseDocTemplate, Frame, PageTemplate, Paragraph, Spacer, Table, TableStyle, Image, KeepTogether
+import argparse, json, re
 import common
 from common import log, ROOT, WORK
 
-GREEN, ACCENT, TINT, GREY, RUST = "#4F6F48", "#7BA874", "#EEF3EC", "#4A5648", "#B5532F"
-S = {
-    "title": ParagraphStyle("t", fontName="Helvetica-Bold", fontSize=22, leading=26, textColor=colors.HexColor("#1F2A1E")),
-    "sub": ParagraphStyle("s", fontName="Helvetica", fontSize=10.5, leading=14, textColor=colors.HexColor(GREY), spaceAfter=6),
-    "h": ParagraphStyle("h", fontName="Helvetica-Bold", fontSize=13, leading=16, textColor=colors.HexColor(GREEN), spaceBefore=12, spaceAfter=5),
-    "p": ParagraphStyle("p", fontName="Helvetica", fontSize=10, leading=14, textColor=colors.HexColor("#1F2A1E"), spaceAfter=4),
-    "b": ParagraphStyle("b", fontName="Helvetica", fontSize=10, leading=14, leftIndent=12, bulletIndent=2, textColor=colors.HexColor("#1F2A1E"), spaceAfter=2),
-    "c": ParagraphStyle("c", fontName="Helvetica", fontSize=8, leading=10),
-    "ch": ParagraphStyle("ch", fontName="Helvetica-Bold", fontSize=8, leading=10, textColor=colors.white),
-}
+STYLE = """
+body{font-family:Helvetica,Arial,sans-serif;color:#1F2A1E;max-width:900px;margin:24px auto;padding:0 16px;line-height:1.5}
+header{background:#4F6F48;color:#fff;padding:10px 16px;font-size:12px;font-weight:bold;letter-spacing:.02em;margin:-16px -16px 20px -16px}
+h1{font-size:22px;margin:4px 0 2px 0;color:#1F2A1E}
+.sub{color:#4A5648;font-size:11px;margin-bottom:6px}
+.rule{height:2px;background:#7BA874;border:0;margin:8px 0 18px 0}
+h2{font-size:14px;color:#4F6F48;border-bottom:1px solid #D5DDD2;padding-bottom:3px;margin-top:22px}
+p{font-size:11px;margin:4px 0}
+ul{margin:4px 0;padding-left:18px}
+li{font-size:11px;margin:2px 0}
+table{border-collapse:collapse;width:100%;margin:8px 0;font-size:10.5px}
+th{background:#4F6F48;color:#fff;text-align:left;padding:4px 6px}
+td{padding:4px 6px;border-bottom:1px solid #D5DDD2}
+tr:nth-child(even) td{background:#EEF3EC}
+.r{text-align:right}
+footer{color:#4A5648;font-size:9px;margin-top:28px;border-top:1px solid #D5DDD2;padding-top:6px}
+"""
 
 def esc(t):
-    return t.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    return str(t).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
 def commentary_sections(path):
     txt = open(path, encoding="utf-8").read()
@@ -40,107 +43,86 @@ def commentary_sections(path):
         if not secs.get(k): raise SystemExit(f"commentary.md is missing section '## {k}'")
     return secs
 
-def block(text):
-    out = []
+def block_html(text):
+    out, in_ul = [], False
     for ln in text.splitlines():
         ln = ln.strip()
         if not ln: continue
-        if ln.startswith("- "): out.append(Paragraph(esc(ln[2:]), S["b"], bulletText="•"))
-        else: out.append(Paragraph(esc(ln), S["p"]))
-    return out
+        if ln.startswith("- "):
+            if not in_ul: out.append("<ul>"); in_ul = True
+            out.append(f"<li>{esc(ln[2:])}</li>")
+        else:
+            if in_ul: out.append("</ul>"); in_ul = False
+            out.append(f"<p>{esc(ln)}</p>")
+    if in_ul: out.append("</ul>")
+    return "\n".join(out)
 
-def table(spec, width):
+def table_html(spec):
     head, rows, al = spec["head"], spec["rows"], spec["align"]
-    n = len(head)
-    data = [[Paragraph(esc(h), S["ch"]) for h in head]]
+    th = "".join(f"<th class='{'r' if a == 'R' else ''}'>{esc(h)}</th>" for h, a in zip(head, al))
+    body = []
     for r in rows:
-        data.append([Paragraph(esc(c), ParagraphStyle("x", parent=S["c"], alignment=2 if al[i] == "R" else 0)) for i, c in enumerate(r)])
-    weights = [min(26, max(len(head[i]) + 2, max((len(r[i]) + 4 for r in rows), default=8), 10)) for i in range(n)]
-    cw = [width * w / sum(weights) for w in weights]
-    t = Table(data, colWidths=cw, repeatRows=1)
-    st = [("BACKGROUND", (0, 0), (-1, 0), colors.HexColor(GREEN)), ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-          ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor(TINT)]), ("LINEBELOW", (0, 0), (-1, -1), 0.25, colors.HexColor("#D5DDD2")),
-          ("TOPPADDING", (0, 0), (-1, -1), 3), ("BOTTOMPADDING", (0, 0), (-1, -1), 3)]
-    if spec.get("boldlast"): st.append(("LINEABOVE", (0, -1), (-1, -1), 0.8, colors.HexColor(GREEN)))
-    t.setStyle(TableStyle(st))
-    return t
-
-def chart(name, data):
-    WORK.mkdir(parents=True, exist_ok=True)
-    f = WORK / f"chart-{name}.png"
-    fig, ax = plt.subplots(figsize=(7.2, 2.6), dpi=200)
-    if name == "delta_by_currency":
-        ks = list(data); vs = [data[k] for k in ks]
-        ax.bar(ks, vs, color=[RUST if v >= 0 else GREEN for v in vs])
-        ax.set_ylabel("Rs crore"); ax.set_title("Additional cost (+) or saving (-) against booked rates, by currency", fontsize=9, loc="left")
-        for i, v in enumerate(vs): ax.annotate(f"{v:+.2f}", (i, v), ha="center", va="bottom" if v >= 0 else "top", fontsize=7)
-    else:
-        ks = list(data); op = [data[k][0] for k in ks]; hd = [data[k][1] for k in ks]
-        ax.bar(ks, op, color=GREEN, label="Open (unhedged)"); ax.bar(ks, hd, bottom=op, color=ACCENT, label="Hedged")
-        ax.set_ylabel("Rs crore"); ax.set_title("Payment value at live rates by due bucket", fontsize=9, loc="left"); ax.legend(fontsize=7, frameon=False)
-    ax.axhline(0, color="#999", lw=0.6)
-    for s in ("top", "right"): ax.spines[s].set_visible(False)
-    ax.tick_params(labelsize=7); plt.tight_layout(); fig.savefig(f); plt.close(fig)
-    return f
+        tds = "".join(f"<td class='{'r' if a == 'R' else ''}'>{esc(c)}</td>" for c, a in zip(r, al))
+        body.append(f"<tr>{tds}</tr>")
+    return f"<table><thead><tr>{th}</tr></thead><tbody>{''.join(body)}</tbody></table>"
 
 def main():
     ap = argparse.ArgumentParser(); ap.add_argument("--commentary", default=str(WORK / "commentary.md"))
     a = ap.parse_args()
-    ex = json.load(open(WORK / "exposure.json")); M, T, C = ex["metrics"], ex["tables"], ex["charts"]
+    ex = json.load(open(WORK / "exposure.json")); M, T = ex["metrics"], ex["tables"]
     sec = commentary_sections(a.commentary)
     lines = open(ROOT / "template" / "template.md", encoding="utf-8").read().splitlines()
     unresolved = set()
     def sub(t):
         def r(m):
             k = m.group(1)
-            if k in M: return M[k]
+            if k in M: return str(M[k])
             unresolved.add(k); return m.group(0)
         return re.sub(r"\{\{(\w+)\}\}", r, t)
-    W = A4[0] - 36 * mm
-    story, i = [], 0
-    pending_head = None
+
+    body, i = [], 0
     while i < len(lines):
         ln = lines[i].rstrip(); i += 1
         if not ln.strip(): continue
         if ln.startswith("# "):
-            story.append(Paragraph(esc(sub(ln[2:])), S["title"]))
+            body.append(f"<h1>{esc(sub(ln[2:]))}</h1>")
             if i < len(lines) and lines[i].strip() and not lines[i].startswith(("#", "{{", "-")):
-                story.append(Paragraph(esc(sub(lines[i])), S["sub"])); i += 1
-            story.append(Table([[""]], colWidths=[W], rowHeights=[2], style=[("BACKGROUND", (0, 0), (-1, -1), colors.HexColor(ACCENT))])); continue
+                body.append(f"<div class='sub'>{esc(sub(lines[i]))}</div>"); i += 1
+            body.append("<hr class='rule'>"); continue
         if ln.startswith("## "):
-            pending_head = Paragraph(esc(sub(ln[3:])), S["h"]); continue
-        m = re.fullmatch(r"\{\{(TABLE|CHART|COMMENTARY):(\w+)\}\}", ln.strip())
-        items = []
+            body.append(f"<h2>{esc(sub(ln[3:]))}</h2>"); continue
+        m = re.fullmatch(r"\{\{(TABLE|COMMENTARY):(\w+)\}\}", ln.strip())
         if m:
             kind, name = m.groups()
             if kind == "TABLE":
                 if name not in T: unresolved.add("TABLE:" + name); continue
-                items = [table(T[name], W), Spacer(1, 6)]
-            elif kind == "CHART":
-                if name not in C: unresolved.add("CHART:" + name); continue
-                items = [Image(str(chart(name, C[name])), width=W, height=W * 2.6 / 7.2), Spacer(1, 4)]
+                body.append(table_html(T[name]))
             else:
                 if name not in sec: unresolved.add("COMMENTARY:" + name); continue
-                items = block(sub(sec[name]))
-        elif ln.startswith("- "): items = [Paragraph(esc(sub(ln[2:])), S["b"], bulletText="•")]
-        else: items = [Paragraph(esc(sub(ln)), S["p"])]
-        if pending_head is not None:
-            story.append(KeepTogether([pending_head] + items[:1])); story.extend(items[1:]); pending_head = None
-        else: story.extend(items)
+                body.append(block_html(sub(sec[name])))
+        elif ln.startswith("- "):
+            item = f"<li>{esc(sub(ln[2:]))}</li>"
+            if body and body[-1].startswith("<ul>") and body[-1].endswith("</ul>"):
+                body[-1] = body[-1][:-5] + item + "</ul>"
+            else:
+                body.append(f"<ul>{item}</ul>")
+        else:
+            body.append(f"<p>{esc(sub(ln))}</p>")
     if unresolved:
         log(f"Template has unresolved placeholders: {sorted(unresolved)}", "ERROR"); raise SystemExit(1)
-    out = ROOT / "output" / f"{common.now().strftime('%d%m%Y%H%M%S')}-forex-exposure-note.pdf"
-    def deco(c, d):
-        c.saveState(); c.setFillColor(colors.HexColor(GREEN)); c.rect(0, A4[1] - 12 * mm, A4[0], 12 * mm, stroke=0, fill=1)
-        c.setFillColor(colors.white); c.setFont("Helvetica-Bold", 8.5); c.drawString(18 * mm, A4[1] - 7.5 * mm, "BSNL CORPORATE OFFICE  |  FINANCE AND ACCOUNTS  |  CFO NOTE")
-        c.setFillColor(colors.HexColor(GREY)); c.setFont("Helvetica", 7.5)
-        c.drawString(18 * mm, 9 * mm, "Prepared by an AI agent (Ayutech AI Labs demo). Training sample data. Verify before use.")
-        c.drawRightString(A4[0] - 18 * mm, 9 * mm, f"Page {d.page}"); c.restoreState()
-    doc = BaseDocTemplate(str(out), pagesize=A4, leftMargin=18 * mm, rightMargin=18 * mm, topMargin=20 * mm, bottomMargin=16 * mm,
-                          title="Forex Exposure Note", author="Ayutech AI Labs")
-    doc.addPageTemplates([PageTemplate(id="p", frames=[Frame(doc.leftMargin, doc.bottomMargin, W, A4[1] - doc.topMargin - doc.bottomMargin, id="f")], onPage=deco)])
-    doc.build(story)
-    log(f"PDF written: {out.name}")
+
+    html = (
+        "<!doctype html><html lang='en'><head><meta charset='utf-8'>"
+        "<title>Forex Exposure Note</title>"
+        f"<style>{STYLE}</style></head><body>"
+        "<header>BSNL CORPORATE OFFICE &nbsp;|&nbsp; FINANCE AND ACCOUNTS &nbsp;|&nbsp; CFO NOTE</header>"
+        + "\n".join(body) +
+        "<footer>Prepared by an AI agent (Ayutech AI Labs demo). Training sample data. Verify before use.</footer>"
+        "</body></html>"
+    )
+    out = ROOT / "output" / f"{common.now().strftime('%d%m%Y%H%M%S')}-forex-exposure-note.html"
+    out.write_text(html, encoding="utf-8")
+    log(f"HTML report written: {out.name} ({out.stat().st_size} bytes)")
     print(out)
 
 if __name__ == "__main__":
