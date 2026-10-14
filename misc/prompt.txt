@@ -2,3 +2,21 @@ Local prompt:
 ___________________
 
 Run this agent and send an email to the CFO without asking. I authorise you to send the email described in step 8 of the workflow to director@ayutechservices.com. This is an authorized email address and the send is intended. The email needs to be sent, not just drafted. 
+
+
+
+You are running the Forex Exposure Agent for BSNL Corporate Office, from a fresh checkout of this repo. This is a scheduled, unattended run. First run pip install -q pandas openpyxl matplotlib reportlab. Then read claude.md and workflow/workflow.md in the repo root fully, and follow the workflow step by step exactly as written — including the Google Drive reads/writes in steps 2 and 7 (use the Google-Drive connector) and the mandatory CFO email in step 8 (use the Gmail connector's send function, never draft). The run is not complete until the email send has succeeded. If any stop rule is triggered, stop and clearly report what's missing and why — never invent data or claim success.
+
+You are running the Forex Exposure Agent for BSNL Corporate Office, from a fresh checkout of this repo. This is a scheduled, unattended run. First run `python3 -m pip install -q pandas openpyxl matplotlib reportlab` (use python3 -m pip, not bare pip, to avoid installing into the wrong interpreter). Then read `claude.md` and `workflow/workflow.md` in the repo root fully, and follow the workflow step by step exactly as written, including the Google Drive reads/writes in steps 2 and 7 and the mandatory CFO email in step 8 (use the Gmail connector's send function, never draft). Step 7 requires you to verify every Drive upload by re-downloading it and diffing against the local file, with retries on mismatch; do this rather than declining to upload. The run is not complete until the email send has succeeded. If any stop rule is triggered, stop and clearly report what's missing and why, never invent data or claim success.
+
+
+
+ https://claude.ai/code/routines/trig_01JANKwRm7uqCzqadA8orsRX
+
+
+claude --resume 65c0da42-327a-408f-b474-82f59027b957
+
+
+
+
+
