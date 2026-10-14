@@ -130,7 +130,7 @@ def main():
         "<!doctype html><html lang='en'><head><meta charset='utf-8'>"
         "<title>Forex Exposure Workbook</title>"
         f"<style>{style}</style></head><body>"
-        f"<h1>Forex Exposure Workbook — {M['reference_date']}</h1>{body}</body></html>"
+        f"<h1>Forex Exposure Workbook - {M['reference_date']}</h1>{body}</body></html>"
     )
     out.write_text(html, encoding="utf-8")
     log(f"Workbook written: {out.name} ({out.stat().st_size} bytes)")
